@@ -5,20 +5,13 @@ function isObject (arg) {
   return typeof arg == "object" && arg !== null;
 }
 
-function getNonceStore (store) {
-  if (isObject(store) && store.type == "redis") {
-    return new lti.Stores.RedisStore(store.client);
-  }
-  return new lti.Stores.MemoryStore();
-};
-
 module.exports = function (userSettings) {
   if (!userSettings.credentials && (!userSettings.consumer_key || !userSettings.consumer_secret)) {
     throw new Error("A consumer_key and consumer_secret must be present");
   }
 
-  var options    = util._extend({}, userSettings);
-  var nonceStore = getNonceStore(options.store);
+  var options    = util._extend({nonceStore: lti.Stores.MemoryStore}, userSettings);
+  var nonceStore = new options.nonceStore();
 
   if (!options.credentials) {
     options.credentials = function (key, callback) {
