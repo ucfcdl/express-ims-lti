@@ -10,8 +10,8 @@ module.exports = function (userSettings) {
     throw new Error("A consumer_key and consumer_secret must be present");
   }
 
-  var options    = util._extend({nonceStore: lti.Stores.MemoryStore}, userSettings);
-  var nonceStore = new options.nonceStore();
+  var options    = util._extend({}, userSettings);
+  var nonceStore = (options.nonceStore ? options.nonceStore : new lti.Stores.MemoryStore());
 
   if (!options.credentials) {
     options.credentials = function (key, callback) {
