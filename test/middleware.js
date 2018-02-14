@@ -4,7 +4,6 @@ var express      = require("express");
 var lti          = require("ims-lti");
 var request      = require("supertest");
 var session      = require("express-session");
-var stSession    = require("supertest-session");
 var should       = require("should");
 var url          = require("url");
 var util         = require("util");
@@ -26,20 +25,34 @@ function addNoops (app) {
   return app;
 }
 
-function addValidators (app) {
-  app.use(function (req, res, next) {
+function addValidators (app, expectSession = true) {
+  // optionally expect req.session.lti to be set
+  app.use((req, res, next) => {
+    if(expectSession && !req.session.lti){
+      res.status(500).end();
+    }
+    else{
+      next()
+    }
+  })
+
+  // expect req.lti to be set
+  app.use((req, res, next) => {
     res.status(req.lti ? 200 : 500).end();
   });
-  app.use(function (err, req, res, next) {
+
+  // fall through to a 500
+  app.use((err, req, res, next) => {
     res.status(500).end();
   });
+
   return app;
 }
 
-function getValidParams (testUrl) {
+function getValidLaunchParams (testUrl) {
   var urlParsed = url.parse(testUrl);
   var fakeRequest = {
-    url: urlParsed.path,
+    url: '/',
     method: "POST",
     connection: {
       encrypted: false
@@ -48,9 +61,36 @@ function getValidParams (testUrl) {
       host: urlParsed.host
     },
     body: {
-      lti_message_type:       "basic-lti-launch-request",
+      lti_message_type:       'basic-lti-launch-request',
       lti_version:            "LTI-1p0",
       resource_link_id:       "http://my-resource.com/test-url",
+      oauth_customer_key:     "key",
+      oauth_signature_method: "HMAC-SHA1",
+      oauth_timestamp:        Math.round(Date.now() / 1000),
+      oauth_nonce:            Math.floor(Math.random() * 0xffffffff)
+    }
+  };
+
+  var signature = genericProvider.signer.build_signature(fakeRequest, fakeRequest.body, SECRET);
+  fakeRequest.body.oauth_signature = signature;
+
+  return fakeRequest.body;
+}
+
+function getValidContentItemSelectParams (testUrl) {
+  var urlParsed = url.parse(testUrl);
+  var fakeRequest = {
+    url: '/',
+    method: "POST",
+    connection: {
+      encrypted: false
+    },
+    headers: {
+      host: urlParsed.host
+    },
+    body: {
+      lti_message_type:       'ContentItemSelectionRequest',
+      lti_version:            "LTI-1p0",
       oauth_customer_key:     "key",
       oauth_signature_method: "HMAC-SHA1",
       oauth_timestamp:        Math.round(Date.now() / 1000),
@@ -71,8 +111,8 @@ describe("express-ims-lti", function () {
     });
   });
 
-  describe("errors", function () {
-    it("should throw an error if required configuration params are missing", function () {
+  describe("Invalid configuration", function () {
+    it("should throw an error if params are missing", function () {
       (function () {
         var middleware = middleware();
       }).should.throw();
@@ -85,13 +125,13 @@ describe("express-ims-lti", function () {
     });
   });
 
-  describe("Expectations: consumer_key and consumer_secret", function () {
+  describe("Lti requests", function () {
     beforeEach(function () {
       var app = this.app = express();
       app.use(bodyParser.json());
       app.use(cookieParser());
       app.use(session({ resave: false, saveUninitialized: true, secret: "easy" }));
-      app.use(middleware({ consumer_key: KEY, consumer_secret: SECRET }));
+      app.use(middleware({ consumer_key: KEY, consumer_secret: SECRET}));
     });
 
     it("should be able to pass over a non-lti request", function (done) {
@@ -101,47 +141,53 @@ describe("express-ims-lti", function () {
         .expect(200, done);
     });
 
-    it("should be able to pick out an lti login request", function (done) {
+    it("should be able to pick out an lti login request with basic launch requests", function (done) {
       // We test for a 500 error here because the LTI request will not be valid
-      // if some necessary request params are not present.
+      // as some necessary request params are not present.
       request(addNoops(this.app))
         .post("/")
         .send({ lti_message_type: "basic-lti-launch-request" })
         .expect(500, done);
     });
 
-    it("should add the lti property to the request object if successful", function (done) {
-      var test = request(addValidators(this.app)).post("/");
+    it("should be able to pick out an lti login request with content item selection requests", function (done) {
+      // We test for a 500 error here because the LTI request will not be valid
+      // as some necessary request params are not present.
+      request(addNoops(this.app))
+        .post("/")
+        .send({ lti_message_type: "ContentItemSelectionRequest" })
+        .expect(500, done);
+    });
 
-      test
-        .send(getValidParams(test.url))
+    it("should be pass over an unsupported lti_message_type", function (done) {
+      // We test for a 200 here because the lti validate process would 500 if it was being run
+      // as some necessary request params are not present.
+      request(addNoops(this.app))
+        .post("/")
+        .send({ lti_message_type: "someWeirdUnsupportedMessageType" })
         .expect(200, done);
     });
 
-    it("should load the provider from the session if a user makes another request", function (done) {
-      var Session = stSession({ app: addValidators(this.app) });
-      var agent   = new Session();
-      var test    = agent.post("/");
+    it("should add the lti property to the request object with basic launch requests", function (done) {
+      var test = request(addValidators(this.app)).post("/");
 
       test
-        .send(getValidParams(test.url))
-        .expect(function (res) {
-          if (res.status != 200)          return "status should be 200";
-          if (!res.headers["set-cookie"]) return "expected a cookie to be set";
-        })
-        .end(function (err) {
-          if (err) {
-            return done(err);
-          }
-
-          agent
-            .get("/")
-            .expect(200, done);
-        });
+        .send(getValidLaunchParams(test.url))
+        .expect(200, done);
     });
+
+    it("should add the lti property to the request object with content item selection requests", function (done) {
+      var test = request(addValidators(this.app)).post("/");
+
+      test
+        .send(getValidContentItemSelectParams(test.url))
+        .expect(200, done);
+    });
+
   });
 
-  describe("Expectations: credentials", function () {
+
+  describe("Valid lti requests with addToSession off", function () {
     beforeEach(function () {
       var app = this.app = express();
       app.use(bodyParser.json());
@@ -149,40 +195,29 @@ describe("express-ims-lti", function () {
       app.use(session({ resave: false, saveUninitialized: true, secret: "easy" }));
 
       app.use(middleware({
+        addToSession: false,
         credentials: function (key, callback) {
           callback(null, KEY, SECRET);
         }
       }));
     });
 
-    it("should add the lti property to the request object if successful", function (done) {
-      var test = request(addValidators(this.app)).post("/");
+    it("should add the lti property to the request object but not set session if successful with launch", function (done) {
+      var test = request(addValidators(this.app, false)).post("/");
 
       test
-        .send(getValidParams(test.url))
+        .send(getValidLaunchParams(test.url))
         .expect(200, done);
     });
 
-    it("should load the provider from the session if the user makes another request", function (done) {
-      var Session = stSession({ app: addValidators(this.app) });
-      var agent   = new Session();
-      var test    = agent.post("/");
+    it("should add the lti property to the session object but not set session if successful with item selection", function (done) {
+      var test = request(addValidators(this.app, false)).post("/");
 
       test
-        .send(getValidParams(test.url))
-        .expect(function (res) {
-          if (res.status != 200)          return "status should be 200";
-          if (!res.headers["set-cookie"]) return "expected a cookie to be set";
-        })
-        .end(function (err) {
-          if (err) {
-            return done(err);
-          }
-
-          agent
-            .get("/")
-            .expect(200, done);
-        });
+        .send(getValidContentItemSelectParams(test.url))
+        .expect(200, done);
     });
+
+
   });
 });

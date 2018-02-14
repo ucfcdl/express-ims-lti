@@ -21,18 +21,16 @@
     "test": "./node_modules/.bin/mocha"
   },
   "dependencies": {
-    "ims-lti": "~2.1.0"
+    "ims-lti": "https://github.com/ChristianMurphy/ims-lti.git#d535b4c4aff8a43775d3d9c1f2069f0593b7779f"
   },
   "devDependencies": {
-    "mocha": "~2.1.0",
-    "should": "~4.6.0",
-    "supertest": "~0.15.0",
-    "supertest-session": "~0.0.0",
-
-    "body-parser": "~1.11.0",
-    "cookie-parser": "~1.3.0",
-    "express": "~4.11.0",
-    "express-session": "~1.10.0",
-    "redis": "~0.12.0"
+    "body-parser": "~1.18.2",
+    "cookie-parser": "~1.4.3",
+    "express": "~4.16.2",
+    "express-session": "~1.15.6",
+    "mocha": "~5.0.1",
+    "redis": "~2.8.0",
+    "should": "~13.2.1",
+    "supertest": "~3.0.0"
   }
 }
