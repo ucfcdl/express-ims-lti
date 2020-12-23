@@ -21,7 +21,7 @@
     "test": "./node_modules/.bin/mocha"
   },
   "dependencies": {
-    "ims-lti": "https://github.com/ChristianMurphy/ims-lti.git#v2.1.6"
+    "ims-lti": "https://github.com/ucfcdl/ims-lti.git#d051afa35ebfa8c3570a176f976e7f28dae9ebf8"
   },
   "devDependencies": {
     "body-parser": "~1.18.2",
